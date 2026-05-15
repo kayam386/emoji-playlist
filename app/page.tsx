@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Header from "./components/Header";
 import EmojiPicker from "./components/CustomEmojiPicker";
 import EmojiSlots from "./components/EmojiSlots";
@@ -22,6 +22,13 @@ type SavedGeneration = {
   tracks: Track[];
 };
 
+type SpotifyProfile = {
+  connected: boolean;
+  displayName?: string | null;
+  topArtists: { name: string; genres: string[] }[];
+  topTracks: { name: string; artist: string }[];
+};
+
 export default function Home() {
   const [selectedEmojis, setSelectedEmojis] = useState<string[]>([]);
   const [tracks, setTracks] = useState<Track[]>([]);
@@ -31,6 +38,21 @@ export default function Home() {
   const [error, setError] = useState("");
   const [view, setView] = useState<"picker" | "results">("picker");
   const [recentGenerations, setRecentGenerations] = useState<SavedGeneration[]>([]);
+  const [spotifyProfile, setSpotifyProfile] = useState<SpotifyProfile | null>(null);
+
+  // Fetch Spotify profile on mount (reads httpOnly cookie server-side)
+  useEffect(() => {
+    console.log("[page] mounting — fetching /api/spotify/profile");
+    fetch("/api/spotify/profile")
+      .then((r) => r.json())
+      .then((data: SpotifyProfile) => {
+        console.log("[page] profile fetch result:", JSON.stringify(data));
+        setSpotifyProfile(data);
+      })
+      .catch((err) => {
+        console.log("[page] profile fetch error:", err);
+      });
+  }, []);
 
   const handleEmojiSelect = (emoji: string) => {
     setSelectedEmojis((prev) => {
@@ -52,7 +74,13 @@ export default function Home() {
       const res = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ emojis: selectedEmojis }),
+        body: JSON.stringify({
+          emojis: selectedEmojis,
+          tasteProfile: spotifyProfile?.connected ? {
+            topArtists: spotifyProfile.topArtists,
+            topTracks:  spotifyProfile.topTracks,
+          } : null,
+        }),
       });
       if (!res.ok) {
         const data = await res.json();
@@ -103,7 +131,10 @@ export default function Home() {
 
   return (
     <div className="min-h-screen flex flex-col" style={{ background: "linear-gradient(180deg, #1a0a2e 0%, #0d0d1a 40%)" }}>
-      <Header />
+      <Header
+        spotifyConnected={spotifyProfile?.connected ?? false}
+        displayName={spotifyProfile?.displayName}
+      />
 
       <main className="flex-1 flex flex-col items-center px-4 pt-8 pb-16">
         <h1 className="text-4xl sm:text-5xl font-black text-white text-center leading-tight mb-8">

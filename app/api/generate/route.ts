@@ -1,6 +1,9 @@
 import Anthropic from "@anthropic-ai/sdk";
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+type TasteProfile = {
+  topArtists: { name: string; genres: string[] }[];
+  topTracks:  { name: string; artist: string }[];
+};
 
 async function getSpotifyToken(): Promise<string> {
   const creds = Buffer.from(
@@ -44,23 +47,25 @@ async function searchSpotify(
   };
 }
 
-export async function POST(request: Request) {
-  try {
-    const { emojis } = await request.json() as { emojis: string[] };
+function buildPrompt(emojiStr: string, taste: TasteProfile | null): string {
+  const tasteBlock = taste
+    ? `
+This listener's taste profile — use ONLY as secondary context to guide genre/style direction:
+- Favourite artists: ${taste.topArtists.slice(0, 15).map((a) => a.name).join(", ")}
+- Genre palette: ${[...new Set(taste.topArtists.flatMap((a) => a.genres))].slice(0, 14).join(", ")}
+- Songs they already know: ${taste.topTracks.slice(0, 12).map((t) => `"${t.name}" by ${t.artist}`).join(", ")}
 
-    if (!Array.isArray(emojis) || emojis.length !== 5) {
-      return Response.json({ error: "Please select exactly 5 emojis" }, { status: 400 });
-    }
+Personalization rules:
+• The emoji mood/energy is the #1 priority — never compromise it for taste
+• Use the genre palette to choose a fitting style lane, nothing more
+• Do NOT recommend any artist or song from the lists above
+• Goal: songs they would love but haven't discovered yet
+`
+    : "";
 
-    const emojiStr = emojis.join(" ");
+  return `You are a music curator.${tasteBlock}
 
-    const message = await anthropic.messages.create({
-      model: "claude-sonnet-4-6",
-      max_tokens: 1024,
-      messages: [
-        {
-          role: "user",
-          content: `You are a music curator. Based on the vibe expressed by these 5 emojis: ${emojiStr}
+Based on the vibe expressed by these 5 emojis: ${emojiStr}
 
 Generate a playlist of exactly 18 real songs that perfectly match the collective mood, energy, and aesthetic.
 
@@ -78,9 +83,29 @@ Rules:
 - Songs must be real, well-known tracks that actually exist on Spotify
 - Match the energy level suggested by the emojis
 - Vary the artists — no more than 2 songs from the same artist
-- vibeTitle should be catchy and describe the mood (e.g. "Your Neon Vibe is Ready", "Your Chill Wave is Ready")`,
-        },
-      ],
+- vibeTitle should be catchy and describe the mood (e.g. "Your Neon Vibe is Ready", "Your Chill Wave is Ready")`;
+}
+
+export async function POST(request: Request) {
+  try {
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    console.log("[generate] ANTHROPIC_API_KEY present:", !!apiKey, "| length:", apiKey?.length ?? 0);
+    if (!apiKey) throw new Error("ANTHROPIC_API_KEY is not set in environment");
+    const anthropic = new Anthropic({ apiKey });
+
+    const body = await request.json() as { emojis: string[]; tasteProfile?: TasteProfile | null };
+    const { emojis, tasteProfile = null } = body;
+
+    if (!Array.isArray(emojis) || emojis.length !== 5) {
+      return Response.json({ error: "Please select exactly 5 emojis" }, { status: 400 });
+    }
+
+    const prompt = buildPrompt(emojis.join(" "), tasteProfile);
+
+    const message = await anthropic.messages.create({
+      model: "claude-sonnet-4-6",
+      max_tokens: 1024,
+      messages: [{ role: "user", content: prompt }],
     });
 
     const content = message.content[0];
@@ -95,21 +120,19 @@ Rules:
       songs: { title: string; artist: string }[];
     };
 
-    const token = await getSpotifyToken();
+    const spotifyToken = await getSpotifyToken();
 
     const trackResults = await Promise.all(
       parsed.songs.map((song) =>
-        searchSpotify(token, `track:${song.title} artist:${song.artist}`)
-          .then((result) => result ?? searchSpotify(token, `${song.title} ${song.artist}`))
+        searchSpotify(spotifyToken, `track:${song.title} artist:${song.artist}`)
+          .then((result) => result ?? searchSpotify(spotifyToken, `${song.title} ${song.artist}`))
       )
     );
-
-    const tracks = trackResults.filter(Boolean);
 
     return Response.json({
       vibeTitle: parsed.vibeTitle,
       vibeSubtitle: parsed.vibeSubtitle,
-      tracks,
+      tracks: trackResults.filter(Boolean),
     });
   } catch (e: unknown) {
     console.error(e);
