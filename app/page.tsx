@@ -42,16 +42,10 @@ export default function Home() {
 
   // Fetch Spotify profile on mount (reads httpOnly cookie server-side)
   useEffect(() => {
-    console.log("[page] mounting — fetching /api/spotify/profile");
     fetch("/api/spotify/profile")
       .then((r) => r.json())
-      .then((data: SpotifyProfile) => {
-        console.log("[page] profile fetch result:", JSON.stringify(data));
-        setSpotifyProfile(data);
-      })
-      .catch((err) => {
-        console.log("[page] profile fetch error:", err);
-      });
+      .then((data: SpotifyProfile) => setSpotifyProfile(data))
+      .catch(() => {});
   }, []);
 
   const handleEmojiSelect = (emoji: string) => {

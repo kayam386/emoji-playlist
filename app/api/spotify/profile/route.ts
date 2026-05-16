@@ -26,16 +26,11 @@ async function refreshAccessToken(refreshToken: string): Promise<string | null> 
 }
 
 export async function GET() {
-  console.log("[profile] route called");
   const cookieStore = await cookies();
   let accessToken   = cookieStore.get("spotify_access_token")?.value;
   const refreshToken = cookieStore.get("spotify_refresh_token")?.value;
 
-  console.log("[profile] access_token present:", !!accessToken, "| first 20 chars:", accessToken?.slice(0, 20) ?? "none");
-  console.log("[profile] refresh_token present:", !!refreshToken);
-
   if (!accessToken && !refreshToken) {
-    console.log("[profile] no tokens found — returning connected: false");
     return Response.json({ connected: false, topArtists: [], topTracks: [] });
   }
 
@@ -64,18 +59,14 @@ export async function GET() {
     }
   }
 
-  console.log("[profile] /me response status:", meRes?.status ?? "no response");
-
   // If /me still fails, token is genuinely invalid — clear and report disconnected
   if (!meRes || !meRes.ok) {
-    console.log("[profile] /me failed — clearing cookies, returning connected: false");
     cookieStore.delete("spotify_access_token");
     cookieStore.delete("spotify_refresh_token");
     return Response.json({ connected: false, topArtists: [], topTracks: [] });
   }
 
   const me = await meRes.json() as { display_name?: string };
-  console.log("[profile] /me succeeded — display_name:", me.display_name);
 
   // ── Step 2: fetch top data — graceful degradation, never blocks connected state ──
   const [artistsResult, tracksResult] = await Promise.allSettled([
@@ -90,7 +81,6 @@ export async function GET() {
   const artistsData = artistsResult.status === "fulfilled" ? artistsResult.value : null;
   const tracksData  = tracksResult.status  === "fulfilled" ? tracksResult.value  : null;
 
-  console.log("[profile] returning connected: true, displayName:", me.display_name ?? null);
   return Response.json({
     connected: true,
     displayName: me.display_name ?? null,

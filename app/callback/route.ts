@@ -1,13 +1,9 @@
 export async function GET(request: Request) {
-  console.log("[callback] fired — url:", request.url);
   const url = new URL(request.url);
   const code = url.searchParams.get("code");
   const error = url.searchParams.get("error");
 
-  console.log("[callback] code present:", !!code, "| error:", error);
-
   if (error || !code) {
-    console.log("[callback] aborting — no code or error param");
     return new Response(null, {
       status: 302,
       headers: { Location: "/?spotify_error=access_denied" },
@@ -27,15 +23,13 @@ export async function GET(request: Request) {
     body: new URLSearchParams({
       grant_type: "authorization_code",
       code,
-      redirect_uri: process.env.SPOTIFY_REDIRECT_URI!,
+      // Must exactly match what the login route sent to Spotify.
+      // Derive from the request origin if the env var isn't set.
+      redirect_uri: process.env.SPOTIFY_REDIRECT_URI ?? `${new URL(request.url).origin}/callback`,
     }),
   });
 
-  console.log("[callback] token exchange response status:", tokenRes.status);
-
   if (!tokenRes.ok) {
-    const body = await tokenRes.text();
-    console.log("[callback] token exchange FAILED — body:", body);
     return new Response(null, {
       status: 302,
       headers: { Location: "/?spotify_error=token_exchange" },
@@ -47,8 +41,6 @@ export async function GET(request: Request) {
     refresh_token?: string;
     expires_in: number;
   };
-
-  console.log("[callback] token received — access_token length:", token.access_token?.length, "| has refresh_token:", !!token.refresh_token, "| expires_in:", token.expires_in);
 
   const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
   const base   = `HttpOnly; Path=/; SameSite=Lax${secure}`;
@@ -65,7 +57,5 @@ export async function GET(request: Request) {
     );
   }
 
-  console.log("[callback] Set-Cookie headers being sent:", responseHeaders.getSetCookie?.() ?? "(getSetCookie not available)");
-  console.log("[callback] redirecting to /?spotify_connected=1");
   return new Response(null, { status: 302, headers: responseHeaders });
 }

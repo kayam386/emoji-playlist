@@ -89,7 +89,6 @@ Rules:
 export async function POST(request: Request) {
   try {
     const apiKey = process.env.ANTHROPIC_API_KEY;
-    console.log("[generate] ANTHROPIC_API_KEY present:", !!apiKey, "| length:", apiKey?.length ?? 0);
     if (!apiKey) throw new Error("ANTHROPIC_API_KEY is not set in environment");
     const anthropic = new Anthropic({ apiKey });
 
